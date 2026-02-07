@@ -10,6 +10,7 @@ class EntityCleanerPanel extends HTMLElement {
         this.sortField = 'days_unavailable'; // default sort by time
         this.sortDirection = 'desc'; // default longest time first
         this.statusFilter = 'all'; 
+        this.lastBackup = null;
     }
 
     set hass(hass) {
@@ -17,7 +18,19 @@ class EntityCleanerPanel extends HTMLElement {
         if (!this.initialized) {
             this.initialized = true;
             this.fetchCandidates();
+            this.fetchInfo();
             this.render();
+        }
+    }
+
+    async fetchInfo() {
+        if (!this._hass) return;
+        try {
+            const result = await this._hass.callWS({ type: 'entity_cleaner/get_info' });
+            this.lastBackup = result.last_backup;
+            this.render();
+        } catch (err) {
+            console.error("Backup Info Error:", err);
         }
     }
 
@@ -72,34 +85,33 @@ class EntityCleanerPanel extends HTMLElement {
         this.render();
     }
 
+    async createBackup() {
+        const btn = this.shadowRoot.getElementById('btn-backup');
+        try {
+            if(btn) {
+                btn.disabled = true;
+                btn.innerText = "Erstelle...";
+            }
+            await this._hass.callWS({ type: 'entity_cleaner/backup' });
+            alert("Backup erfolgreich gestartet!");
+            // Wait a bit and refresh info
+            setTimeout(() => this.fetchInfo(), 5000);
+        } catch (e) {
+            alert("Backup Fehler: " + e.message);
+        } finally {
+            if(btn) {
+                btn.disabled = false;
+                btn.innerText = "Backup erstellen";
+            }
+        }
+    }
+
     async deleteSelected() {
         const ids = Array.from(this.selected);
         if (ids.length === 0) return;
 
-        const wantBackup = confirm(`Sollen die ${ids.length} Entities wirklich gelöscht werden?\n\nMöchtest du vorher ein BACKUP erstellen? (Empfohlen)`);
-        
-        if (wantBackup) {
-            try {
-                const btn = this.shadowRoot.getElementById('btn-delete');
-                if(btn) {
-                    btn.disabled = true;
-                    btn.innerText = "Erstelle Backup...";
-                }
-                
-                await this._hass.callWS({ type: 'entity_cleaner/backup' });
-                alert("Backup erfolgreich angestossen. Löschen beginnt jetzt...");
-            } catch (e) {
-                if(!confirm("Backup fehlgeschlagen! Trotzdem löschen? " + e.message)) {
-                    this.render(); 
-                    return;
-                }
-            }
-        } else {
-            const reallyDelete = confirm(`Ganz sicher OHNE Backup ${ids.length} Entities löschen?`);
-            if (!reallyDelete) {
-                this.render(); 
-                return;
-            }
+        if (!confirm(`Bist du sicher? ${ids.length} Entities werden UNWIDERRUFLICH gelöscht.`)) {
+            return;
         }
 
         try {
@@ -194,6 +206,7 @@ class EntityCleanerPanel extends HTMLElement {
                     cursor: not-allowed;
                 }
                 button.danger { background-color: var(--error-color); }
+                button.secondary { background-color: var(--secondary-text-color); }
                 
                 /* Table */
                 table {
@@ -228,6 +241,12 @@ class EntityCleanerPanel extends HTMLElement {
                 .status-unknown { background-color: rgba(158, 158, 158, 0.2); color: var(--secondary-text-color); }
                 
                 .sort-icon { display: inline-block; width: 12px; text-align: center; }
+                
+                .backup-info {
+                    font-size: 12px;
+                    margin-left: 10px;
+                    opacity: 0.8;
+                }
             </style>
         `;
 
@@ -258,16 +277,22 @@ class EntityCleanerPanel extends HTMLElement {
             `<option value="${s}" ${this.statusFilter === s ? 'selected' : ''}>${s === 'all' ? 'Alle Status' : s}</option>`
         ).join('');
 
+        const backupDate = this.lastBackup ? new Date(this.lastBackup).toLocaleString() : 'Nie / Unbekannt';
+
         this.shadowRoot.innerHTML = `
             ${style}
             <ha-card>
-                <div style="padding: 0 10px;">
-                    <h1>Entity Cleaner 🧹</h1>
-                    <p style="opacity: 0.8; margin-bottom: 25px;">
-                        Verwalte defekte oder verwaiste Entities.
-                        <br>
-                        <small><b>Hinweis:</b> "Unavailable" bedeutet, die Integration meldet einen Fehler. "Orphaned" (Leiche) bedeutet, die Entity existiert nur noch in der Registry, hat aber keine Verbindung mehr zu einer Integration.</small>
-                    </p>
+                <div style="padding: 0 10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h1>Entity Cleaner 🧹</h1>
+                        <p style="opacity: 0.8; margin-bottom: 25px;">
+                            Verwalte defekte oder verwaiste Entities.
+                        </p>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="backup-info">Letztes Backup: <b>${backupDate}</b></span>
+                        <button id="btn-backup" style="margin-left: 10px;">Backup erstellen</button>
+                    </div>
                 </div>
                 
                 <div class="controls">
@@ -320,6 +345,9 @@ class EntityCleanerPanel extends HTMLElement {
     }
 
     addEventListeners() {
+        // Backup Button
+        this.shadowRoot.getElementById('btn-backup').addEventListener('click', () => this.createBackup());
+
         // Refresh Button
         this.shadowRoot.getElementById('btn-refresh').addEventListener('click', () => {
             const inp = this.shadowRoot.getElementById('days-input');
@@ -356,11 +384,6 @@ class EntityCleanerPanel extends HTMLElement {
                 if (e.target.checked) {
                     visible.forEach(c => this.selected.add(c.entity_id));
                 } else {
-                    // Only deselect visible ones? Or clear all? Usually clear visible is expected in filtered view.
-                    // Let's clear visible ones from selection to allow batch selection across filters if needed?
-                    // Actually, standard behavior is often "clear all". Let's stick to simple "Clear All".
-                    // Wait, if I have a filter active, "Select All" should probably only select the filtered ones.
-                    // And deselect should deselect them.
                     visible.forEach(c => this.selected.delete(c.entity_id));
                 }
                 this.render();
@@ -373,11 +396,6 @@ class EntityCleanerPanel extends HTMLElement {
                 const id = e.target.getAttribute('data-id');
                 if (e.target.checked) this.selected.add(id);
                 else this.selected.delete(id);
-                
-                // Re-render button only to keep performance up? 
-                // Or full render? Full render is safer for "Select All" state sync.
-                // With 700 entities, full render might be jerky. 
-                // Let's just update the button and the Select All box manually for speed.
                 
                 const btn = this.shadowRoot.getElementById('btn-delete');
                 btn.innerText = `🗑️ ${this.selected.size} Löschen`;

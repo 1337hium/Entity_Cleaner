@@ -50,7 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-cleaner-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": "/entity_cleaner_files/main.js",
+                "js_url": "/entity_cleaner_files/main.js?v=2",
             }
         },
         require_admin=True,
@@ -62,6 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         websocket_api.async_register_command(hass, ws_get_candidates)
         websocket_api.async_register_command(hass, ws_delete_entities)
         websocket_api.async_register_command(hass, ws_create_backup)
+        websocket_api.async_register_command(hass, ws_get_info)
     except Exception:
         pass # Bereits registriert
 
@@ -72,6 +73,39 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async_remove_panel(hass, "entity-cleaner")
     # Websocket commands lassen sich schwer deregistrieren, stören aber nicht
     return True
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "entity_cleaner/get_info",
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_get_info(hass, connection, msg):
+    """Gibt Infos zurück (z.B. letztes Backup)."""
+    last_backup = None
+    
+    try:
+        # Versuche Backup-Info zu holen
+        manager = hass.data.get("backup")
+        if manager:
+            # Kompatibilität für verschiedene HA Versionen
+            if hasattr(manager, "async_get_backups"):
+                backups = await manager.async_get_backups()
+            elif hasattr(manager, "get_backups"):
+                backups = await manager.get_backups()
+            else:
+                backups = manager.backups
+
+            if backups:
+                # Backups können Dict oder Liste sein
+                backup_list = list(backups.values()) if isinstance(backups, dict) else list(backups)
+                if backup_list:
+                    # Sortiere nach Datum (neuestes zuerst)
+                    latest = sorted(backup_list, key=lambda x: x.date, reverse=True)[0]
+                    last_backup = latest.date.isoformat()
+    except Exception as e:
+        _LOGGER.warning("Konnte Backup-Infos nicht abrufen: %s", e)
+
+    connection.send_result(msg["id"], {"last_backup": last_backup})
 
 @websocket_api.websocket_command({
     vol.Required("type"): "entity_cleaner/get_candidates",
