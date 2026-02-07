@@ -1,55 +1,58 @@
-# Entity Cleaner für Home Assistant
+# Entity Cleaner for Home Assistant
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=1337hium&repository=Entity_Cleaner&category=integration)
 [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=entity_cleaner)
 
-Räumt deine Home Assistant Entity Registry auf. Finde und lösche "Unavailable" Entities und "Leichen" (Orphaned Entities), die schon lange nicht mehr gesehen wurden.
+Cleans up your Home Assistant Entity Registry. Find and delete "Unavailable" entities and "Orphaned" entities (ghosts) that haven't been seen for a long time.
 
 ## Features
 
-*   🧹 **Automatisches Finden:** Listet Entities auf, die `unavailable` oder `unknown` sind.
-*   👻 **Geister finden:** Erkennt Entities, die in der Registry stehen, aber keine State-Objekte mehr haben (oft nach Entfernen von Integrationen übrig geblieben).
-*   ⏱️ **Filter:** Filtere nach Tagen (z.B. "Zeige alles, was seit 30 Tagen nicht verfügbar ist").
-*   🛡️ **Sicherheit:** Fragt vor dem Löschen, ob ein **Backup** erstellt werden soll.
-*   ✅ **Bulk Delete:** Wähle mehrere Entities aus und lösche sie auf einmal.
+*   🧹 **Automatic Detection:** Lists entities that are `unavailable` or `unknown`.
+*   👻 **Find Ghosts:** Detects entities that exist in the registry but no longer have state objects (often left over after removing integrations).
+*   ⏱️ **Filter:** Filter by days (e.g., "Show everything unavailable for more than 30 days").
+*   🛡️ **Safety:** Asks if a **Backup** should be created before deleting.
+*   ✅ **Bulk Delete:** Select multiple entities and delete them at once.
 
 ## Installation
 
-### Via HACS (Empfohlen)
+### Via HACS (Recommended)
 
-1.  Füge dieses Repository als **Custom Repository** in HACS hinzu.
-    *   HACS > Integrationen > 3 Punkte oben rechts > Benutzerdefinierte Repositories.
-        * URL: `https://github.com/1337hium/Entity_Cleaner` (oder Pfad zu diesem Repo).
-    *   Kategorie: **Integration**.
-2.  Klicke auf "Herunterladen".
-3.  Starte Home Assistant neu.
+1.  Add this repository as a **Custom Repository** in HACS.
+    *   HACS > Integrations > 3 dots (top right) > Custom repositories.
+    *   URL: `https://github.com/1337hium/Entity_Cleaner`
+    *   Category: **Integration**.
+2.  Click "Download".
+3.  Restart Home Assistant.
 
-### Manuell
+### Manual
 
-1.  Lade den Ordner `custom_components/entity_cleaner` in deinen `config/custom_components/` Ordner hoch.
-2.  Starte Home Assistant neu.
+1.  Upload the `custom_components/entity_cleaner` folder to your `config/custom_components/` directory.
+2.  Restart Home Assistant.
 
-## Konfiguration
+## Configuration
 
-Diese Integration benötigt keine YAML-Konfiguration. Sie fügt automatisch einen Eintrag in die Seitenleiste ein (nur für Administratoren sichtbar).
+This integration does not require YAML configuration. It automatically adds an entry to the sidebar (visible to administrators only).
 
-1.  Gehe nach dem Neustart in die Seitenleiste und klicke auf **"Entity Cleaner"**.
-    *(Falls das Icon nicht erscheint, leere deinen Browser-Cache).*
+1.  After restarting, go to **Settings > Devices & Services > Add Integration**.
+2.  Search for **"Entity Cleaner"**.
+3.  Click to install.
+4.  The "Entity Cleaner" entry will appear in your sidebar.
+    *(If the icon doesn't appear immediately, clear your browser cache).*
 
-## Nutzung
+## Usage
 
-1.  Öffne das Panel "Entity Cleaner".
-2.  Stelle oben die Anzahl der Tage ein (Standard: 7). Entities, die kürzer als diese Zeit "unavailable" sind, werden ausgeblendet.
-3.  Klicke auf "Aktualisieren".
-4.  Wähle die Entities aus, die du löschen möchtest.
-5.  Klicke auf "Löschen".
-6.  Bestätige den Dialog. **Empfehlung:** Wähle "OK", um vorher ein Backup zu erstellen.
+1.  Open the "Entity Cleaner" panel.
+2.  Set the number of days at the top (Default: 0). Entities unavailable for less than this time are hidden.
+3.  Click "Refresh".
+4.  Select the entities you want to delete.
+5.  Click "Delete".
+6.  Confirm the dialog. **Recommendation:** Choose "OK" to create a backup first.
 
-## Hinweise
+## Notes
 
-*   **"Inaktiv seit":** Home Assistant speichert den Status "unavailable" im State Machine Cache nur bis zum nächsten Neustart. Wenn du HA neu startest, wird `last_changed` zurückgesetzt. Entities, die gar keinen Status haben ("orphaned"), werden immer angezeigt.
-*   **Backup:** Die Backup-Funktion nutzt den nativen `backup.create` Service. Das dauert je nach System einige Sekunden bis Minuten.
+*   **"Inactive since":** Home Assistant stores the "unavailable" status in the state machine cache only until the next restart. If you restart HA, `last_changed` is reset. Entities that have no status at all ("orphaned") are always displayed.
+*   **Backup:** The backup function uses the native `backup.create` service. Depending on your system, this may take a few seconds to minutes.
 
-## Lizenz
+## License
 
 MIT
