@@ -1,0 +1,8 @@
+{
+  "name": "Entity Cleaner",
+  "content_in_root": false,
+  "filename": "manifest.json",
+  "zip_release": false,
+  "render_readme": true,
+  "homeassistant": "2024.1.0"
+}

@@ -1,0 +1,12 @@
+{
+  "domain": "entity_cleaner",
+  "name": "Entity Cleaner",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["frontend"],
+  "documentation": "https://github.com/DEIN_USERNAME/entity_cleaner",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/DEIN_USERNAME/entity_cleaner/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}
