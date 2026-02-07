@@ -1,10 +1,9 @@
 # Entity Cleaner für Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=1337hium&repository=Entity_Cleaner&category=integration)
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=entity_cleaner)
 
 Räumt deine Home Assistant Entity Registry auf. Finde und lösche "Unavailable" Entities und "Leichen" (Orphaned Entities), die schon lange nicht mehr gesehen wurden.
-
-![Entity Cleaner Screenshot](https://via.placeholder.com/800x400.png?text=Screenshot+Entity+Cleaner)
 
 ## Features
 
