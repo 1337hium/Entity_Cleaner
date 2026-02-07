@@ -20,7 +20,7 @@ Räumt deine Home Assistant Entity Registry auf. Finde und lösche "Unavailable"
 
 1.  Füge dieses Repository als **Custom Repository** in HACS hinzu.
     *   HACS > Integrationen > 3 Punkte oben rechts > Benutzerdefinierte Repositories.
-    *   URL: `https://github.com/DEIN_USERNAME/entity_cleaner` (oder Pfad zu diesem Repo).
+        * URL: `https://github.com/1337hium/Entity_Cleaner` (oder Pfad zu diesem Repo).
     *   Kategorie: **Integration**.
 2.  Klicke auf "Herunterladen".
 3.  Starte Home Assistant neu.
