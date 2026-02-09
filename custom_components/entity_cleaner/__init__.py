@@ -50,7 +50,79 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-cleaner-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": "/entity_cleaner_files/main.js?v=7",
+                "js_url": "/entity_cleaner_files/main.js?v=10",
+            }
+        },
+        require_admin=True,
+    )
+
+    # 3. Registriere Websocket Commands
+    # Wir fangen Fehler ab, falls sie durch Reload doppelt registriert werden
+    try:
+        websocket_api.async_register_command(hass, ws_get_candidates)
+        websocket_api.async_register_command(hass, ws_delete_entities)
+        websocket_api.async_register_command(hass, ws_create_backup)
+        websocket_api.async_register_command(hass, ws_get_info)
+    except Exception:
+        pass # Bereits registriert
+
+    return True
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    async_remove_panel(hass, "entity-cleaner")
+    # Websocket commands lassen sich schwer deregistrieren, stören aber nicht
+    return True
+
+    # 2. Registriere das Panel
+    async_register_built_in_panel(
+        hass,
+        component_name="custom",
+        sidebar_title="Entity Cleaner",
+        sidebar_icon="hass:broom",
+        frontend_url_path="entity-cleaner",
+        config={
+            "_panel_custom": {
+                "name": "entity-cleaner-panel",
+                "embed_iframe": False,
+                "trust_external": False,
+                "js_url": "/entity_cleaner_files/main.js?v=8",
+            }
+        },
+        require_admin=True,
+    )
+
+    # 3. Registriere Websocket Commands
+    # Wir fangen Fehler ab, falls sie durch Reload doppelt registriert werden
+    try:
+        websocket_api.async_register_command(hass, ws_get_candidates)
+        websocket_api.async_register_command(hass, ws_delete_entities)
+        websocket_api.async_register_command(hass, ws_create_backup)
+        websocket_api.async_register_command(hass, ws_get_info)
+    except Exception:
+        pass # Bereits registriert
+
+    return True
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    async_remove_panel(hass, "entity-cleaner")
+    # Websocket commands lassen sich schwer deregistrieren, stören aber nicht
+    return True
+
+    # 2. Registriere das Panel
+    async_register_built_in_panel(
+        hass,
+        component_name="custom",
+        sidebar_title="Entity Cleaner",
+        sidebar_icon="hass:broom",
+        frontend_url_path="entity-cleaner",
+        config={
+            "_panel_custom": {
+                "name": "entity-cleaner-panel",
+                "embed_iframe": False,
+                "trust_external": False,
+                "js_url": "/entity_cleaner_files/main.js?v=12",
             }
         },
         require_admin=True,
@@ -85,48 +157,89 @@ async def ws_get_info(hass, connection, msg):
     last_backup_manual = None
     
     try:
-        backups_found = []
+        raw_backups_data = []
 
         # 1. Versuche Core Backup Integration
         manager = hass.data.get("backup")
         if manager:
-            backups = None
+            b_data = None
             if hasattr(manager, "async_get_backups"):
-                backups = await manager.async_get_backups()
+                b_data = await manager.async_get_backups()
             elif hasattr(manager, "get_backups"):
-                backups = await manager.get_backups()
+                b_data = await manager.get_backups()
             elif hasattr(manager, "backups"):
-                backups = manager.backups
+                b_data = manager.backups
             
-            if backups:
-                backups_found = list(backups.values()) if isinstance(backups, dict) else list(backups)
+            if b_data:
+                raw_backups_data.append(b_data)
 
         # 2. Fallback: Versuche sensor.backup_state
-        if not backups_found:
-            state = hass.states.get("sensor.backup_state")
-            if state and state.attributes.get("backups"):
-                b_list = state.attributes["backups"]
-                if isinstance(b_list, list):
-                    backups_found = b_list
+        state = hass.states.get("sensor.backup_state")
+        if state and state.attributes.get("backups"):
+            raw_backups_data.append(state.attributes["backups"])
 
-        # 3. Verarbeite gefundene Backups
-        if backups_found:
-            def get_date(b):
-                if isinstance(b, dict):
-                    return b.get("date")
-                return getattr(b, "date", None)
+        # 3. Robustes Flattening / Suchen
+        valid_backups = []
+
+        def inspect_item(item):
+            # Prüfe ob das Item selbst ein Backup ist
+            # Wir suchen nach etwas, das ein Datum hat
+            found_date = None
+            if isinstance(item, dict):
+                found_date = item.get("date") or item.get("created") or item.get("created_at")
+            else:
+                for attr in ["date", "created", "created_at"]:
+                    if hasattr(item, attr):
+                        val = getattr(item, attr)
+                        if val:
+                            found_date = val
+                            break
             
-            def get_name(b):
+            if found_date:
+                valid_backups.append(item)
+                return
+
+            # Wenn kein Backup, tauche tiefer
+            if isinstance(item, dict):
+                for val in item.values():
+                    inspect_item(val)
+            elif isinstance(item, (list, tuple)):
+                for val in item:
+                    inspect_item(val)
+
+        for data in raw_backups_data:
+            inspect_item(data)
+
+        _LOGGER.info("Entity Cleaner: %s gültige Backups extrahiert.", len(valid_backups))
+
+        # 4. Sortieren und Zuordnen
+        if valid_backups:
+            def get_date_val(b):
                 if isinstance(b, dict):
-                    return b.get("name", "")
+                    return b.get("date") or b.get("created") or b.get("created_at")
+                for attr in ["date", "created", "created_at"]:
+                    if hasattr(b, attr): return getattr(b, attr)
+                return None
+
+            def get_date_comparable(b):
+                d = get_date_val(b)
+                if d is None: return 0
+                if isinstance(d, datetime): return d.timestamp()
+                if isinstance(d, str):
+                    try: return dt_util.parse_datetime(d).timestamp()
+                    except: return 0
+                return 0
+
+            def get_name(b):
+                if isinstance(b, dict): return b.get("name", "")
                 return getattr(b, "name", "")
 
-            # Sortiere alle nach Datum (neuestes zuerst)
-            valid_backups = [b for b in backups_found if get_date(b) is not None]
-            valid_backups.sort(key=lambda x: get_date(x), reverse=True)
+            valid_backups.sort(key=lambda x: get_date_comparable(x), reverse=True)
             
             for b in valid_backups:
-                d_val = get_date(b)
+                d_val = get_date_val(b)
+                if not d_val: continue
+                
                 d_str = d_val.isoformat() if hasattr(d_val, "isoformat") else str(d_val)
                 name = get_name(b)
                 
@@ -141,7 +254,7 @@ async def ws_get_info(hass, connection, msg):
                     break
 
     except Exception as e:
-        _LOGGER.warning("Konnte Backup-Infos nicht abrufen: %s", e)
+        _LOGGER.exception("Entity Cleaner: Fehler beim Abrufen der Backup-Infos")
 
     connection.send_result(msg["id"], {
         "last_backup_auto": last_backup_auto,
