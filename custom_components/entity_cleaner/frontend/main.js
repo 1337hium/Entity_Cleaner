@@ -10,7 +10,8 @@ class EntityCleanerPanel extends HTMLElement {
         this.sortField = 'days_unavailable'; // default sort by time
         this.sortDirection = 'desc'; // default longest time first
         this.statusFilter = 'all'; 
-        this.lastBackup = null;
+        this.lastBackupAuto = null;
+        this.lastBackupManual = null;
     }
 
     set hass(hass) {
@@ -27,7 +28,8 @@ class EntityCleanerPanel extends HTMLElement {
         if (!this._hass) return;
         try {
             const result = await this._hass.callWS({ type: 'entity_cleaner/get_info' });
-            this.lastBackup = result.last_backup;
+            this.lastBackupAuto = result.last_backup_auto;
+            this.lastBackupManual = result.last_backup_manual;
             this.render();
         } catch (err) {
             console.error("Backup Info Error:", err);
@@ -277,7 +279,8 @@ class EntityCleanerPanel extends HTMLElement {
             `<option value="${s}" ${this.statusFilter === s ? 'selected' : ''}>${s === 'all' ? 'Alle Status' : s}</option>`
         ).join('');
 
-        const backupDate = this.lastBackup ? new Date(this.lastBackup).toLocaleString() : 'Nie / Unbekannt';
+        const autoDate = this.lastBackupAuto ? new Date(this.lastBackupAuto).toLocaleString() : 'Nie';
+        const manualDate = this.lastBackupManual ? new Date(this.lastBackupManual).toLocaleString() : 'Nie';
 
         this.shadowRoot.innerHTML = `
             ${style}
@@ -289,9 +292,10 @@ class EntityCleanerPanel extends HTMLElement {
                             Verwalte defekte oder verwaiste Entities.
                         </p>
                     </div>
-                    <div style="text-align:right;">
-                        <span class="backup-info">Letztes Backup: <b>${backupDate}</b></span>
-                        <button id="btn-backup" style="margin-left: 10px;">Backup erstellen</button>
+                    <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:5px;">
+                        <span class="backup-info">Auto Backup: <b>${autoDate}</b></span>
+                        <span class="backup-info">Manuelles Backup: <b>${manualDate}</b></span>
+                        <button id="btn-backup" style="margin-top: 5px;">Backup erstellen</button>
                     </div>
                 </div>
                 

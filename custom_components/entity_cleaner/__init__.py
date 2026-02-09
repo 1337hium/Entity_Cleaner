@@ -50,7 +50,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-cleaner-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": "/entity_cleaner_files/main.js?v=2",
+                "js_url": "/entity_cleaner_files/main.js?v=7",
             }
         },
         require_admin=True,
@@ -81,31 +81,72 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 @websocket_api.async_response
 async def ws_get_info(hass, connection, msg):
     """Gibt Infos zurück (z.B. letztes Backup)."""
-    last_backup = None
+    last_backup_auto = None
+    last_backup_manual = None
     
     try:
-        # Versuche Backup-Info zu holen
+        backups_found = []
+
+        # 1. Versuche Core Backup Integration
         manager = hass.data.get("backup")
         if manager:
-            # Kompatibilität für verschiedene HA Versionen
+            backups = None
             if hasattr(manager, "async_get_backups"):
                 backups = await manager.async_get_backups()
             elif hasattr(manager, "get_backups"):
                 backups = await manager.get_backups()
-            else:
+            elif hasattr(manager, "backups"):
                 backups = manager.backups
-
+            
             if backups:
-                # Backups können Dict oder Liste sein
-                backup_list = list(backups.values()) if isinstance(backups, dict) else list(backups)
-                if backup_list:
-                    # Sortiere nach Datum (neuestes zuerst)
-                    latest = sorted(backup_list, key=lambda x: x.date, reverse=True)[0]
-                    last_backup = latest.date.isoformat()
+                backups_found = list(backups.values()) if isinstance(backups, dict) else list(backups)
+
+        # 2. Fallback: Versuche sensor.backup_state
+        if not backups_found:
+            state = hass.states.get("sensor.backup_state")
+            if state and state.attributes.get("backups"):
+                b_list = state.attributes["backups"]
+                if isinstance(b_list, list):
+                    backups_found = b_list
+
+        # 3. Verarbeite gefundene Backups
+        if backups_found:
+            def get_date(b):
+                if isinstance(b, dict):
+                    return b.get("date")
+                return getattr(b, "date", None)
+            
+            def get_name(b):
+                if isinstance(b, dict):
+                    return b.get("name", "")
+                return getattr(b, "name", "")
+
+            # Sortiere alle nach Datum (neuestes zuerst)
+            valid_backups = [b for b in backups_found if get_date(b) is not None]
+            valid_backups.sort(key=lambda x: get_date(x), reverse=True)
+            
+            for b in valid_backups:
+                d_val = get_date(b)
+                d_str = d_val.isoformat() if hasattr(d_val, "isoformat") else str(d_val)
+                name = get_name(b)
+                
+                if name == "Entity Cleaner Auto-Backup":
+                    if not last_backup_auto: 
+                        last_backup_auto = d_str
+                else:
+                    if not last_backup_manual:
+                        last_backup_manual = d_str
+                
+                if last_backup_auto and last_backup_manual:
+                    break
+
     except Exception as e:
         _LOGGER.warning("Konnte Backup-Infos nicht abrufen: %s", e)
 
-    connection.send_result(msg["id"], {"last_backup": last_backup})
+    connection.send_result(msg["id"], {
+        "last_backup_auto": last_backup_auto,
+        "last_backup_manual": last_backup_manual
+    })
 
 @websocket_api.websocket_command({
     vol.Required("type"): "entity_cleaner/get_candidates",
@@ -199,15 +240,97 @@ async def ws_delete_entities(hass, connection, msg):
 @websocket_api.async_response
 async def ws_create_backup(hass, connection, msg):
     """Triggered ein Backup."""
+    _LOGGER.info("Entity Cleaner: Backup-Anfrage erhalten.")
+    
+    # Diagnose: Welche Services sehen wir?
+    available_services = []
+    if hass.services.has_service("hassio", "backup_full"): available_services.append("hassio.backup_full")
+    if hass.services.has_service("hassio", "backup_partial"): available_services.append("hassio.backup_partial")
+    if hass.services.has_service("backup", "create"): available_services.append("backup.create")
+    
+    debug_msg = f"Services: {', '.join(available_services)}. Modus: Blocking=True, Context=User"
+    
+    await hass.services.async_call(
+        "persistent_notification", 
+        "create", 
+        {
+            "title": "Entity Cleaner Backup V6",
+            "message": debug_msg,
+            "notification_id": "entity_cleaner_debug"
+        }
+    )
+
     try:
-        if hass.services.has_service("backup", "create"):
-            await hass.services.async_call("backup", "create", {"name": "Entity Cleaner Auto-Backup"})
+        service_called = False
+        # Context holen damit Supervisor weiß wer es aufruft
+        ctx = connection.context(msg)
+        
+        # 1. Versuche 'hassio.backup_full' (Supervisor - BEVORZUGT)
+        if hass.services.has_service("hassio", "backup_full"):
+             _LOGGER.info("Rufe hassio.backup_full auf...")
+             await hass.services.async_call(
+                 "hassio", 
+                 "backup_full", 
+                 {"name": "Entity Cleaner Auto-Backup"},
+                 blocking=True, # WICHTIG: Warte auf Rückmeldung/Fehler!
+                 context=ctx
+             )
+             service_called = True
+             
+        # 2. Versuche 'hassio.backup_partial'
         elif hass.services.has_service("hassio", "backup_partial"):
-            await hass.services.async_call("hassio", "backup_partial", {"name": "Entity Cleaner Auto-Backup", "homeassistant": True})
-        else:
-             connection.send_error(msg["id"], "no_backup_service", "Kein Backup Service gefunden.")
+             _LOGGER.info("Rufe hassio.backup_partial auf...")
+             await hass.services.async_call(
+                 "hassio", 
+                 "backup_partial", 
+                 {
+                     "name": "Entity Cleaner Auto-Backup", 
+                     "homeassistant": True
+                 },
+                 blocking=True,
+                 context=ctx
+             )
+             service_called = True
+
+        # 3. Versuche Standard 'backup.create' (Core)
+        elif hass.services.has_service("backup", "create"):
+            _LOGGER.info("Rufe backup.create auf...")
+            await hass.services.async_call(
+                "backup", 
+                "create", 
+                {"name": "Entity Cleaner Auto-Backup"},
+                blocking=True,
+                context=ctx
+            ) 
+            service_called = True
+
+        if not service_called:
+             connection.send_error(msg["id"], "no_backup_service", "Kein Backup-Service (hassio/backup) gefunden.")
              return
 
+        # 2. Erfolg
+        await hass.services.async_call(
+            "persistent_notification", 
+            "create", 
+            {
+                "title": "Entity Cleaner Backup Erfolg",
+                "message": "Der Backup-Service hat die Ausführung erfolgreich bestätigt (Blocking Call returned).",
+                "notification_id": "entity_cleaner_debug"
+            }
+        )
+
         connection.send_result(msg["id"], {"success": True})
+        
     except Exception as e:
+        _LOGGER.exception("Fehler beim Erstellen des Backups")
         connection.send_error(msg["id"], "backup_failed", str(e))
+        
+        await hass.services.async_call(
+            "persistent_notification", 
+            "create", 
+            {
+                "title": "Entity Cleaner Backup Fehler",
+                "message": f"Fehler beim Blocking-Call: {str(e)}",
+                "notification_id": "entity_cleaner_debug"
+            }
+        )
